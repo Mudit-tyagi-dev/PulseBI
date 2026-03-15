@@ -1,31 +1,32 @@
 // REST calls — only used for health check + room config
 // Chat messages go over WebSocket (see socket.js)
 
-const BASE_URL = (import.meta.env.VITE_API_URL || 'https://biz-dash-backend.onrender.com').replace(/\/$/, '');
+const BASE_URL = (
+  import.meta.env.VITE_API_URL || "https://biz-dash-backend.onrender.com"
+).replace(/\/$/, "");
 
 // GET /  — Health Check
 export async function healthCheck() {
   const res = await fetch(`${BASE_URL}/`);
-  if (!res.ok) throw new Error('Server unreachable');
+  if (!res.ok) throw new Error("Server unreachable");
   return res.json();
 }
 
 // POST /config/rooms/{room_id}  — Setconfig (send Gemini key)
 export async function setRoomConfig(roomId, geminiApiKey) {
   const res = await fetch(`${BASE_URL}/config/rooms/${roomId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ ai_model: "gemini-2.0-flash", api_key: geminiApiKey }),
-   
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ai_model: "gemini-2.5-flash-lite",
+      api_key: geminiApiKey,
+    }),
   });
-  console.log('key being sent:', geminiApiKey);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Config failed: ${res.status}`);
-  }
-  return res.json();
+  const data = await res.json();
+  console.log("setRoomConfig response:", data); // ← ye add karo
+  if (!res.ok) throw new Error(data.detail || `Config failed: ${res.status}`);
+  return data;
 }
-
 // GET /config/rooms/{room_id}  — Getroomconfig
 export async function getRoomConfig(roomId) {
   const res = await fetch(`${BASE_URL}/config/rooms/${roomId}`);

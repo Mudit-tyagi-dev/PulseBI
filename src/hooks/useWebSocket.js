@@ -11,15 +11,20 @@
 //    streamingText  string | null  — current partial AI token stream
 // ─────────────────────────────────────────────
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { createSocket, WS_STATUS } from '../utils/socket';
-import { addMessage, upsertRoom } from '../utils/chatStorage';
+import { useEffect, useRef, useState, useCallback } from "react";
+import { createSocket, WS_STATUS } from "../utils/socket";
+import { addMessage, upsertRoom } from "../utils/chatStorage";
 
-export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdReceived }) {
+export function useWebSocket({
+  roomId,
+  onNewMessage,
+  onRoomNameUpdate,
+  onRoomIdReceived,
+}) {
   const socketRef = useRef(null);
   const [wsStatus, setWsStatus] = useState(WS_STATUS.CLOSED);
   const [streamingText, setStreamingText] = useState(null);
-  const streamBufferRef = useRef('');
+  const streamBufferRef = useRef("");
 
   useEffect(() => {
     // roomId null ho toh bhi connect karo — backend ID dega
@@ -28,48 +33,76 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
       socketRef.current = null;
     }
 
-    streamBufferRef.current = '';
+    streamBufferRef.current = "";
     setStreamingText(null);
 
     const socket = createSocket(roomId);
     socketRef.current = socket;
 
-    socket.on('status', setWsStatus);
+    socket.on("status", setWsStatus);
 
-    socket.on('token', (token) => {
+    socket.on("token", (token) => {
       streamBufferRef.current += token;
       setStreamingText(streamBufferRef.current);
     });
 
-    socket.on('done', () => {
+    socket.on("done", () => {
       const fullText = streamBufferRef.current;
-      streamBufferRef.current = '';
+      streamBufferRef.current = "";
       setStreamingText(null);
       if (fullText.trim()) {
-        const room = addMessage(roomId, { role: 'assistant', content: fullText, ts: Date.now() });
+        const room = addMessage(roomId, {
+          role: "assistant",
+          content: fullText,
+          ts: Date.now(),
+        });
         if (room) onNewMessage(room.messages);
       }
     });
 
-    socket.on('message', (data) => {
-      streamBufferRef.current = '';
+    socket.on("message", (data) => {
+      streamBufferRef.current= "";
       setStreamingText(null);
 
-      // backend pehla message room_id bhejta hai
       if (data.room_id) {
         onRoomIdReceived?.(data.room_id);
         return;
       }
 
-      const content = data.content ?? data.reply ?? data.data ?? JSON.stringify(data);
-      const room = addMessage(roomId, { role: 'assistant', content, ts: Date.now() });
+      // type ke hisaab se content nikalo
+      let content;
+      if (data.type === "explanation" || data.type === "reply") {
+        content = data.data;
+      } else if (data.type === "chart") {
+        // chart alag handle hoga
+        const room = addMessage(roomId, {
+          role: "assistant",
+          type: "chart",
+          data: data.data,
+          ts: Date.now(),
+        });
+        if (room) onNewMessage(room.messages);
+        return;
+      } else {
+        content = data.content ?? data.data ?? JSON.stringify(data);
+      }
+
+      const room = addMessage(roomId, {
+        role: "assistant",
+        content,
+        ts: Date.now(),
+      });
       if (room) onNewMessage(room.messages);
     });
 
-    socket.on('error', (msg) => {
-      streamBufferRef.current = '';
+    socket.on("error", (msg) => {
+      streamBufferRef.current = "";
       setStreamingText(null);
-      const room = addMessage(roomId, { role: 'error', content: `Error: ${msg}`, ts: Date.now() });
+      const room = addMessage(roomId, {
+        role: "error",
+        content: `Error: ${msg}`,
+        ts: Date.now(),
+      });
       if (room) onNewMessage(room.messages);
     });
 
@@ -79,25 +112,30 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
     };
   }, [roomId]);
 
-  const sendMessage = useCallback((text) => {
-    if (!socketRef.current) return;
+  const sendMessage = useCallback(
+    (text) => {
+      if (!socketRef.current) return;
 
-    const userMsg = { role: 'user', content: text, ts: Date.now() };
-    const updatedRoom = addMessage(roomId, userMsg);
+      const userMsg = { role: "user", content: text, ts: Date.now() };
+      const updatedRoom = addMessage(roomId, userMsg);
 
-    if (updatedRoom) {
-      if (updatedRoom.messages.filter(m => m.role === 'user').length === 1) {
-        updatedRoom.name = text.length > 36 ? text.slice(0, 36) + '…' : text;
-        upsertRoom(updatedRoom);
-        onRoomNameUpdate?.(roomId, updatedRoom.name);
+      if (updatedRoom) {
+        if (
+          updatedRoom.messages.filter((m) => m.role === "user").length === 1
+        ) {
+          updatedRoom.name = text.length > 36 ? text.slice(0, 36) + "…" : text;
+          upsertRoom(updatedRoom);
+          onRoomNameUpdate?.(roomId, updatedRoom.name);
+        }
+        onNewMessage(updatedRoom.messages);
       }
-      onNewMessage(updatedRoom.messages);
-    }
 
-    streamBufferRef.current = '';
-    setStreamingText(null);
-    socketRef.current.sendMessage(text);
-  }, [roomId, onNewMessage, onRoomNameUpdate]);
+      streamBufferRef.current = "";
+      setStreamingText(null);
+      socketRef.current.sendMessage(text);
+    },
+    [roomId, onNewMessage, onRoomNameUpdate],
+  );
 
   return { wsStatus, sendMessage, streamingText };
 }

@@ -80,16 +80,34 @@ export function createSocket(roomId) {
         ws.send(JSON.stringify(msg));
       }
     };
-
     ws.onmessage = (event) => {
       let data;
       try {
         data = JSON.parse(event.data);
       } catch {
-        // plain text fallback — treat as full message
         data = { type: "message", content: event.data };
       }
 
+      // loading/thinking ignore karo
+      if (
+        data.status === "laoding" ||
+        data.status === "loading" ||
+        data.status === "thinking"
+      )
+        return;
+
+      // backend ka format: { status: 'success', data: { type, data, ... } }
+      if (data.status === "success") {
+        emit("message", data.data);
+        return;
+      }
+
+      if (data.status === "error") {
+        emit("error", data.data ?? "Unknown error");
+        return;
+      }
+
+      // fallback — purana format
       switch (data.type) {
         case "token":
           emit("token", data.content ?? data.token ?? "");
@@ -100,7 +118,6 @@ export function createSocket(roomId) {
         case "error":
           emit("error", data.content ?? data.message ?? "Unknown error");
           break;
-        case "message":
         default:
           emit("message", data);
           break;
