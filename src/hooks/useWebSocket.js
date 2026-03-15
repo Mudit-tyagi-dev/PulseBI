@@ -13,19 +13,16 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createSocket, WS_STATUS } from '../utils/socket';
-import { addMessage, upsertRoom, getRoomById } from '../utils/chatStorage';
+import { addMessage, upsertRoom } from '../utils/chatStorage';
 
-export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate }) {
+export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdReceived }) {
   const socketRef = useRef(null);
   const [wsStatus, setWsStatus] = useState(WS_STATUS.CLOSED);
-  const [streamingText, setStreamingText] = useState(null); // null = not streaming
-  const streamBufferRef = useRef('');                        // accumulates tokens
+  const [streamingText, setStreamingText] = useState(null);
+  const streamBufferRef = useRef('');
 
-  // ── Connect / reconnect when roomId changes ─────────────────
   useEffect(() => {
-    if (!roomId) return;
-
-    // Tear down old socket
+    // roomId null ho toh bhi connect karo — backend ID dega
     if (socketRef.current) {
       socketRef.current.destroy();
       socketRef.current = null;
@@ -37,65 +34,58 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate }) {
     const socket = createSocket(roomId);
     socketRef.current = socket;
 
-    // Status changes
-    socket.on('status', (status) => {
-      setWsStatus(status);
-    });
+    socket.on('status', setWsStatus);
 
-    // Streaming token — append to buffer, push to UI
     socket.on('token', (token) => {
       streamBufferRef.current += token;
       setStreamingText(streamBufferRef.current);
     });
 
-    // Streaming done — commit full message to storage
     socket.on('done', () => {
       const fullText = streamBufferRef.current;
       streamBufferRef.current = '';
       setStreamingText(null);
-
       if (fullText.trim()) {
-        const aiMsg = { role: 'assistant', content: fullText, ts: Date.now() };
-        const updatedRoom = addMessage(roomId, aiMsg);
-        if (updatedRoom) onNewMessage(updatedRoom.messages);
+        const room = addMessage(roomId, { role: 'assistant', content: fullText, ts: Date.now() });
+        if (room) onNewMessage(room.messages);
       }
     });
 
-    // Full message at once (non-streaming backend)
     socket.on('message', (data) => {
       streamBufferRef.current = '';
       setStreamingText(null);
-      const content = data.content ?? data.reply ?? data.message ?? JSON.stringify(data);
-      const aiMsg = { role: 'assistant', content, ts: Date.now() };
-      const updatedRoom = addMessage(roomId, aiMsg);
-      if (updatedRoom) onNewMessage(updatedRoom.messages);
+
+      // backend pehla message room_id bhejta hai
+      if (data.room_id) {
+        onRoomIdReceived?.(data.room_id);
+        return;
+      }
+
+      const content = data.content ?? data.reply ?? data.data ?? JSON.stringify(data);
+      const room = addMessage(roomId, { role: 'assistant', content, ts: Date.now() });
+      if (room) onNewMessage(room.messages);
     });
 
-    // Error from backend
     socket.on('error', (msg) => {
       streamBufferRef.current = '';
       setStreamingText(null);
-      const errMsg = { role: 'error', content: `Backend error: ${msg}`, ts: Date.now() };
-      const updatedRoom = addMessage(roomId, errMsg);
-      if (updatedRoom) onNewMessage(updatedRoom.messages);
+      const room = addMessage(roomId, { role: 'error', content: `Error: ${msg}`, ts: Date.now() });
+      if (room) onNewMessage(room.messages);
     });
 
     return () => {
       socket.destroy();
       socketRef.current = null;
     };
-  }, [roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomId]);
 
-  // ── Send a message over the socket ──────────────────────────
   const sendMessage = useCallback((text) => {
     if (!socketRef.current) return;
 
-    // Save user message to localStorage first
     const userMsg = { role: 'user', content: text, ts: Date.now() };
     const updatedRoom = addMessage(roomId, userMsg);
 
     if (updatedRoom) {
-      // Auto-name the room from first message
       if (updatedRoom.messages.filter(m => m.role === 'user').length === 1) {
         updatedRoom.name = text.length > 36 ? text.slice(0, 36) + '…' : text;
         upsertRoom(updatedRoom);
@@ -104,11 +94,8 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate }) {
       onNewMessage(updatedRoom.messages);
     }
 
-    // Reset streaming buffer for new response
     streamBufferRef.current = '';
     setStreamingText(null);
-
-    // Send over WebSocket
     socketRef.current.sendMessage(text);
   }, [roomId, onNewMessage, onRoomNameUpdate]);
 

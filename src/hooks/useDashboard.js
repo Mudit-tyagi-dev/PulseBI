@@ -15,7 +15,6 @@ export function useDashboard() {
   const [serverStatus, setServerStatus] = useState('unknown');
   const [showKeyModal, setShowKeyModal] = useState(false);
 
-  // ── Init on mount ────────────────────────────────────────────
   useEffect(() => {
     const key = getStoredGeminiKey();
     setGeminiKeyState(key);
@@ -39,34 +38,40 @@ export function useDashboard() {
       .catch(() => setServerStatus('error'));
   }, []);
 
-  // ── Refresh room list from storage ──────────────────────────
   const refreshRooms = useCallback(() => {
     setRooms(getAllRooms());
   }, []);
 
-  // ── WebSocket — connected per room ───────────────────────────
   const { wsStatus, sendMessage: wsSend, streamingText } = useWebSocket({
     roomId: currentRoomId,
     onNewMessage: (msgs) => {
       setMessages([...msgs]);
       refreshRooms();
     },
-    onRoomNameUpdate: (roomId, name) => {
-      refreshRooms();
+    onRoomNameUpdate: () => { refreshRooms(); },
+    onRoomIdReceived: async (backendRoomId) => {
+      if (geminiKey) {
+        try { await setRoomConfig(backendRoomId, geminiKey); } catch(e) { console.warn(e); }
+      }
     },
   });
 
-  // ── Gemini key save ──────────────────────────────────────────
   const saveGeminiKey = useCallback(async (key) => {
     storeGeminiKey(key);
     setGeminiKeyState(key);
     setShowKeyModal(false);
-    if (currentRoomId) {
-      try { await setRoomConfig(currentRoomId, key); } catch (e) { console.warn(e); }
-    }
-  }, [currentRoomId]);
 
-  // ── Room actions ─────────────────────────────────────────────
+    const roomId = currentRoomId || createRoom('New Chat').id;
+    try { await setRoomConfig(roomId, key); } catch (e) { console.warn(e); }
+
+    if (!currentRoomId) {
+      refreshRooms();
+      setCurrentRoomId(roomId);
+      setLastRoomId(roomId);
+      setMessages([]);
+    }
+  }, [currentRoomId, refreshRooms]);
+
   const switchRoom = useCallback((roomId) => {
     setCurrentRoomId(roomId);
     setLastRoomId(roomId);
@@ -76,15 +81,14 @@ export function useDashboard() {
   const newChat = useCallback(async () => {
     const room = createRoom('New Chat');
     refreshRooms();
-    setCurrentRoomId(room.id);
-    setLastRoomId(room.id);
-    setMessages([]);
 
-    // Register config for new room
     if (geminiKey) {
       try { await setRoomConfig(room.id, geminiKey); } catch (e) { console.warn(e); }
     }
 
+    setCurrentRoomId(room.id);
+    setLastRoomId(room.id);
+    setMessages([]);
     return room;
   }, [geminiKey, refreshRooms]);
 
@@ -102,33 +106,17 @@ export function useDashboard() {
     }
   }, [currentRoomId, refreshRooms, switchRoom]);
 
-  // ── Send message via WebSocket ───────────────────────────────
   const sendMessage = useCallback(async (text) => {
     if (!text.trim()) return;
     if (!geminiKey) { setShowKeyModal(true); return; }
-
-    // Auto-create room if needed
-    if (!currentRoomId) {
-      await newChat();
-    }
-
+    if (!currentRoomId) { await newChat(); }
     wsSend(text);
   }, [currentRoomId, geminiKey, newChat, wsSend]);
 
   return {
-    rooms,
-    currentRoomId,
-    messages,
-    geminiKey,
-    serverStatus,
-    wsStatus,
-    streamingText,
-    showKeyModal,
-    setShowKeyModal,
-    saveGeminiKey,
-    switchRoom,
-    newChat,
-    removeRoom,
-    sendMessage,
+    rooms, currentRoomId, messages, geminiKey,
+    serverStatus, wsStatus, streamingText,
+    showKeyModal, setShowKeyModal,
+    saveGeminiKey, switchRoom, newChat, removeRoom, sendMessage,
   };
 }

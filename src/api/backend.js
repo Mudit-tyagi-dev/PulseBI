@@ -15,8 +15,10 @@ export async function setRoomConfig(roomId, geminiApiKey) {
   const res = await fetch(`${BASE_URL}/config/rooms/${roomId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ gemini_api_key: geminiApiKey }),
+   body: JSON.stringify({ ai_model: "gemini-2.0-flash", api_key: geminiApiKey }),
+   
   });
+  console.log('key being sent:', geminiApiKey);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || `Config failed: ${res.status}`);
