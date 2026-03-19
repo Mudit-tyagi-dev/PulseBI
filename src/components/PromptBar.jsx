@@ -10,12 +10,14 @@ const STATUS_LABEL = {
 };
 
 const MODELS_URL = "https://biz-dash-backend.onrender.com/config/models";
+const CONFIG_URL = "https://biz-dash-backend.onrender.com/config/rooms";
 
 export default function PromptBar({
   onSend,
   isStreaming,
   wsStatus,
   currentRoomId,
+  backendRoomId,      // ← naya prop
   geminiKey,
   onOpenKeyModal,
   mode,
@@ -29,7 +31,6 @@ export default function PromptBar({
   const ref = useRef(null);
   const dropRef = useRef(null);
 
-  // backend fetch model
   useEffect(() => {
     async function fetchModels() {
       try {
@@ -37,7 +38,7 @@ export default function PromptBar({
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
           setModels(json.data);
-          setSelectedModel(json.data[0]); // pehla model default
+          setSelectedModel(json.data[0]);
         }
       } catch (e) {
         console.error("Models fetch failed:", e);
@@ -58,6 +59,28 @@ export default function PromptBar({
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
+  async function handleModelChange(model) {
+    setSelectedModel(model);
+    setModelDropOpen(false);
+
+    // ── Backend UUID use karo, frontend room_id nahi ──
+    const roomId = backendRoomId || currentRoomId;
+    if (!roomId) return;
+
+    try {
+      await fetch(`${CONFIG_URL}/${roomId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ai_model: model,
+          api_key: geminiKey || "",
+        }),
+      });
+    } catch (e) {
+      console.error("Model set failed:", e);
+    }
+  }
+
   const canSend =
     text.trim().length > 0 && !isStreaming && wsStatus === WS_STATUS.OPEN;
 
@@ -70,7 +93,7 @@ export default function PromptBar({
 
   function handleSend() {
     if (!canSend) return;
-    onSend(text.trim(), selectedModel); // model bhi bhejo
+    onSend(text.trim(), selectedModel);
     setText("");
     if (ref.current) ref.current.style.height = "";
   }
@@ -92,9 +115,7 @@ export default function PromptBar({
           {ws.label}
         </div>
 
-        <div
-          className={`prompt-wrap ${isStreaming ? "streaming" : ""} ${wsStatus !== WS_STATUS.OPEN ? "disconnected" : ""}`}
-        >
+        <div className={`prompt-wrap ${isStreaming ? "streaming" : ""} ${wsStatus !== WS_STATUS.OPEN ? "disconnected" : ""}`}>
           <textarea
             ref={ref}
             className="prompt-input"
@@ -108,43 +129,25 @@ export default function PromptBar({
             value={text}
             rows={1}
             disabled={isStreaming || wsStatus !== WS_STATUS.OPEN}
-            onChange={(e) => {
-              setText(e.target.value);
-              autoResize();
-            }}
+            onChange={(e) => { setText(e.target.value); autoResize(); }}
             onKeyDown={handleKey}
           />
           <div className="prompt-actions">
-            {/* ── Model Dropdown ── */}
             <div className="model-drop-wrap" ref={dropRef}>
               <button
                 className="model-drop-btn"
                 onClick={() => setModelDropOpen((p) => !p)}
                 disabled={modelsLoading}
-                title="AI Model chunein"
+                title="AI Model"
               >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" />
                 </svg>
                 <span className="model-drop-label">
                   {modelsLoading ? "..." : selectedModel || "Model"}
                 </span>
-                <svg
-                  width="9"
-                  height="9"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </button>
@@ -156,23 +159,12 @@ export default function PromptBar({
                     <button
                       key={m}
                       className={`model-drop-item ${selectedModel === m ? "active" : ""}`}
-                      onClick={() => {
-                        setSelectedModel(m);
-                        setModelDropOpen(false);
-                      }}
+                      onClick={() => handleModelChange(m)}
                     >
                       <span className="model-dot" />
                       {m}
                       {selectedModel === m && (
-                        <svg
-                          className="model-check"
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                        >
+                        <svg className="model-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
                       )}
@@ -204,9 +196,7 @@ export default function PromptBar({
           onClick={onModeToggle}
           title={mode === "chart" ? "Query mode" : "Chart mode"}
         >
-          <div
-            className={`mode-slider-track ${mode === "chart" ? "active" : ""}`}
-          >
+          <div className={`mode-slider-track ${mode === "chart" ? "active" : ""}`}>
             <div className="mode-slider-thumb" />
           </div>
           <span className="mode-slider-label">

@@ -153,11 +153,11 @@ export function createSocket(roomId) {
     }
   }
 
-  function sendMessage(text, type = "query") {
-    const msg = { type, data: text };
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-    else messageQueue.push(msg);
-  }
+function sendMessage(text, type = "query", model = "") {
+  const msg = { type, data: text, model };
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  else messageQueue.push(msg);
+}
   function destroy() {
     destroyed = true;
     messageQueue = [];
