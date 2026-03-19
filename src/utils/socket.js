@@ -59,17 +59,34 @@ export function createSocket(roomId) {
 
   function connect() {
     if (destroyed) return;
-    const url = `${WS_BASE}/ws/${roomId}`;
+
     emit("status", WS_STATUS.CONNECTING);
 
     try {
-      ws = new WebSocket(`${WS_BASE}/ws/chat`);
+      const backendRoomId = localStorage.getItem(`ws_room_${roomId}`);
+      const url = backendRoomId
+        ? `${WS_BASE}/ws/chat?room_id=${backendRoomId}` // reuse existing
+        : `${WS_BASE}/ws/chat`; // create new
+
+      // console.log("🌐 WS CONNECT:", url);
+
+      ws = new WebSocket(url);
     } catch (e) {
       emit("status", WS_STATUS.ERROR);
       emit("error", `Cannot open WebSocket: ${e.message}`);
       scheduleReconnect();
       return;
     }
+
+    ws.onopen = () => {
+      reconnectAttempt = 0;
+      emit("status", WS_STATUS.OPEN);
+
+      while (messageQueue.length > 0) {
+        const msg = messageQueue.shift();
+        ws.send(JSON.stringify(msg));
+      }
+    };
 
     ws.onopen = () => {
       reconnectAttempt = 0;
@@ -153,11 +170,11 @@ export function createSocket(roomId) {
     }
   }
 
-function sendMessage(text, type = "query", model = "") {
-  const msg = { type, data: text, model };
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-  else messageQueue.push(msg);
-}
+  function sendMessage(text, type = "query") {
+    const msg = { type, data: text };
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    else messageQueue.push(msg);
+  }
   function destroy() {
     destroyed = true;
     messageQueue = [];

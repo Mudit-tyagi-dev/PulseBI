@@ -9,13 +9,12 @@ import { useWebSocket } from "./useWebSocket";
 export function useDashboard() {
   const [rooms, setRooms] = useState([]);
   const roomsRef = useRef([]);
-
   const [currentRoomId, setCurrentRoomId] = useState(null);
+  const currentRoomIdRef = useRef(null); // ← stale closure fix
   const [messages, setMessages] = useState([]);
   const [geminiKey, setGeminiKeyState] = useState("");
   const [serverStatus, setServerStatus] = useState("unknown");
   const [showKeyModal, setShowKeyModal] = useState(false);
-
   const backendRoomIdRef = useRef(null);
 
   const [roomFileMap, setRoomFileMap] = useState(() => {
@@ -23,7 +22,12 @@ export function useDashboard() {
     catch { return {}; }
   });
 
-  // Rooms update karo — ref + state dono
+  // ── currentRoomId + ref dono update ──
+  const setRoom = useCallback((id) => {
+    currentRoomIdRef.current = id;
+    setCurrentRoomId(id);
+  }, []);
+
   const updateRooms = useCallback(() => {
     const latest = [...getAllRooms()];
     roomsRef.current = latest;
@@ -40,7 +44,7 @@ export function useDashboard() {
       const lastId = getLastRoomId();
       const restored = lastId && allRooms.find((r) => r.id === lastId)
         ? lastId : allRooms[allRooms.length - 1].id;
-      setCurrentRoomId(restored);
+      setRoom(restored); // ← ref + state
       setMessages(getRoomById(restored)?.messages || []);
       const savedBackendId = localStorage.getItem(`ws_room_${restored}`);
       if (savedBackendId) backendRoomIdRef.current = savedBackendId;
@@ -56,16 +60,31 @@ export function useDashboard() {
       updateRooms();
     },
     onRoomNameUpdate: () => updateRooms(),
+
     onRoomIdReceived: async (backendRoomId) => {
-      const storageKey = `ws_room_${currentRoomId}`;
+      // ── ref use karo — stale closure nahi hoga ──
+      const storageKey = `ws_room_${currentRoomIdRef.current}`;
       const alreadySaved = localStorage.getItem(storageKey);
-      if (!alreadySaved) localStorage.setItem(storageKey, backendRoomId);
-      backendRoomIdRef.current = alreadySaved || backendRoomId;
+
+      if (alreadySaved) {
+        backendRoomIdRef.current = alreadySaved;
+        // console.log(`♻️ Kept: ${alreadySaved} for ${currentRoomIdRef.current}`);
+        const freshKey = getStoredGeminiKey();
+        if (freshKey) {
+          try { await setRoomConfig(alreadySaved, freshKey); }
+          catch (e) { console.warn(e.message); }
+        }
+        return;
+      }
+
+      localStorage.setItem(storageKey, backendRoomId);
+      backendRoomIdRef.current = backendRoomId;
+      // console.log(`✅ Saved: ${backendRoomId} for ${currentRoomIdRef.current}`);
 
       const freshKey = getStoredGeminiKey();
       if (freshKey) {
-        try { await setRoomConfig(backendRoomIdRef.current, freshKey); }
-        catch (e) { console.warn("setRoomConfig error:", e.message); }
+        try { await setRoomConfig(backendRoomId, freshKey); }
+        catch (e) { console.warn(e.message); }
       }
     },
   });
@@ -81,22 +100,23 @@ export function useDashboard() {
       catch (e) { console.warn("setRoomConfig skipped:", e.message); }
     }
 
-    if (!currentRoomId) {
+    if (!currentRoomIdRef.current) {
       const room = createRoom("New Dashboard");
       updateRooms();
-      setCurrentRoomId(room.id);
+      setRoom(room.id);
       setLastRoomId(room.id);
       setMessages([]);
     }
-  }, [currentRoomId, updateRooms]);
+  }, [updateRooms, setRoom]);
 
   const switchRoom = useCallback((roomId) => {
-    setCurrentRoomId(roomId);
+    setRoom(roomId); // ← ref + state
     setLastRoomId(roomId);
     setMessages(getRoomById(roomId)?.messages || []);
     const savedBackendId = localStorage.getItem(`ws_room_${roomId}`);
     backendRoomIdRef.current = savedBackendId || null;
-  }, []);
+    // console.log(`🔄 Switch: ${roomId} → backend: ${savedBackendId}`);
+  }, [setRoom]);
 
   const newChat = useCallback(async () => {
     const room = createRoom("New Dashboard");
@@ -104,12 +124,11 @@ export function useDashboard() {
     const updated = [...getAllRooms()];
     roomsRef.current = updated;
     setRooms(updated);
-    setCurrentRoomId(room.id);
+    setRoom(room.id); // ← ref + state
     setLastRoomId(room.id);
     setMessages([]);
-    // console.log("newChat — rooms after setRooms:", updated.length);
     return room;
-  }, []);
+  }, [setRoom]);
 
   const removeRoom = useCallback((roomId) => {
     deleteRoom(roomId);
@@ -125,41 +144,39 @@ export function useDashboard() {
     updateRooms();
 
     const remaining = getAllRooms();
-    if (currentRoomId === roomId) {
+    if (currentRoomIdRef.current === roomId) {
       if (remaining.length > 0) {
         switchRoom(remaining[remaining.length - 1].id);
       } else {
-        setCurrentRoomId(null);
+        setRoom(null);
         setMessages([]);
         backendRoomIdRef.current = null;
       }
     }
-  }, [currentRoomId, switchRoom, updateRooms]);
+  }, [switchRoom, updateRooms, setRoom]);
 
   const sendMessage = useCallback(async (text, mode = "query") => {
     if (!text.trim()) return;
     if (!geminiKey) { setShowKeyModal(true); return; }
 
-    let roomId = currentRoomId;
-    if (!roomId) {
+    if (!currentRoomIdRef.current) {
       const room = await newChat();
-      roomId = room.id;
       await new Promise(r => setTimeout(r, 50));
     }
 
     wsSend(text, mode === "chart" ? "chart" : "query");
-  }, [currentRoomId, geminiKey, newChat, wsSend]);
+  }, [geminiKey, newChat, wsSend]);
 
   const uploadFile = useCallback(async (file) => {
-    const roomId = backendRoomIdRef.current || currentRoomId;
+    const roomId = backendRoomIdRef.current || currentRoomIdRef.current;
 
     if (!roomId) {
       alert("Pehle ek message bhejo taaki room ban sake!");
       return { success: false, reason: "no_room" };
     }
 
-    if (roomFileMap[currentRoomId]) {
-      alert(`Is dashboard mein "${roomFileMap[currentRoomId]}" already upload hai. Naya dashboard banao nayi file ke liye.`);
+    if (roomFileMap[currentRoomIdRef.current]) {
+      alert(`Is dashboard mein "${roomFileMap[currentRoomIdRef.current]}" already upload hai.`);
       return { success: false, reason: "already_uploaded" };
     }
 
@@ -174,7 +191,7 @@ export function useDashboard() {
       const json = await res.json();
       if (json.success !== false) {
         setRoomFileMap((prev) => {
-          const updated = { ...prev, [currentRoomId]: file.name };
+          const updated = { ...prev, [currentRoomIdRef.current]: file.name };
           localStorage.setItem("roomFileMap", JSON.stringify(updated));
           return updated;
         });
@@ -188,7 +205,7 @@ export function useDashboard() {
       alert("Upload failed — server se connection nahi hua");
       return { success: false, reason: "network_error" };
     }
-  }, [currentRoomId, roomFileMap]);
+  }, [roomFileMap]);
 
   return {
     rooms, currentRoomId, messages, geminiKey, serverStatus,

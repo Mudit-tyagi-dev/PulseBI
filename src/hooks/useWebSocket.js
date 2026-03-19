@@ -12,7 +12,8 @@ function tryParseChart(text) {
 
   const numberedList = text.match(/\d+\.\s+\*?([\w\s]+)\*?:\s*([\d,]+)/g);
   if (numberedList && numberedList.length >= 2) {
-    const labels = [], values = [];
+    const labels = [],
+      values = [];
     numberedList.forEach((item) => {
       const match = item.match(/\d+\.\s+\*?([\w\s]+)\*?:\s*([\d,]+)/);
       if (match) {
@@ -20,7 +21,8 @@ function tryParseChart(text) {
         values.push(parseInt(match[2].replace(/,/g, ""), 10));
       }
     });
-    if (labels.length >= 2) return { labels, values, x_axis: "Category", y_axis: "Value", chartType };
+    if (labels.length >= 2)
+      return { labels, values, x_axis: "Category", y_axis: "Value", chartType };
   }
 
   const numbers = text.match(/[\d,£$]+/g);
@@ -32,15 +34,22 @@ function tryParseChart(text) {
 
   if (values.length < 2) return null;
 
-  const monthPattern = text.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{0,4}/gi);
-  const andPattern = text.match(/are\s+([\w\s,]+(?:\s+and\s+[\w\s]+)?),?\s+with/i);
+  const monthPattern = text.match(
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s*\d{0,4}/gi,
+  );
+  const andPattern = text.match(
+    /are\s+([\w\s,]+(?:\s+and\s+[\w\s]+)?),?\s+with/i,
+  );
   const boldLabels = text.match(/\*\*(.*?)\*\*/g);
 
   let labels = [];
   if (monthPattern && monthPattern.length >= 2) {
     labels = monthPattern.map((m) => m.trim());
   } else if (andPattern) {
-    labels = andPattern[1].split(/,\s*|\s+and\s+/i).map((l) => l.trim()).filter((l) => l.length > 0);
+    labels = andPattern[1]
+      .split(/,\s*|\s+and\s+/i)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
   } else if (boldLabels) {
     labels = boldLabels.map((l) => l.replace(/\*\*/g, "").split(":")[0].trim());
   }
@@ -56,7 +65,12 @@ function tryParseChart(text) {
   };
 }
 
-export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdReceived }) {
+export function useWebSocket({
+  roomId,
+  onNewMessage,
+  onRoomNameUpdate,
+  onRoomIdReceived,
+}) {
   const socketRef = useRef(null);
   const [wsStatus, setWsStatus] = useState(WS_STATUS.CLOSED);
   const [streamingText, setStreamingText] = useState(null);
@@ -65,7 +79,10 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
 
   useEffect(() => {
     if (!roomId) return;
-    if (socketRef.current) { socketRef.current.destroy(); socketRef.current = null; }
+    if (socketRef.current) {
+      socketRef.current.destroy();
+      socketRef.current = null;
+    }
 
     streamBufferRef.current = "";
     setStreamingText(null);
@@ -73,7 +90,9 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
     const socket = createSocket(roomId);
     socketRef.current = socket;
 
-    socket.on("status", setWsStatus);
+    socket.on("status", (status) => {
+      setWsStatus(status);
+    });
 
     socket.on("token", (token) => {
       streamBufferRef.current += token;
@@ -87,13 +106,24 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
       if (!fullText.trim()) return;
 
       const chartData = tryParseChart(fullText);
-      const room = addMessage(roomId, chartData ? {
-        role: "assistant", type: "dashboard",
-        data: chartData, query: lastQueryRef.current,
-        explanation: fullText, content: fullText, ts: Date.now(),
-      } : {
-        role: "assistant", content: fullText, ts: Date.now(),
-      });
+      const room = addMessage(
+        roomId,
+        chartData
+          ? {
+              role: "assistant",
+              type: "dashboard",
+              data: chartData,
+              query: lastQueryRef.current,
+              explanation: fullText,
+              content: fullText,
+              ts: Date.now(),
+            }
+          : {
+              role: "assistant",
+              content: fullText,
+              ts: Date.now(),
+            },
+      );
       if (room) onNewMessage(room.messages);
     });
 
@@ -106,17 +136,38 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
       // room_id — backend ka room assign
       if (data?.room_id) {
         const storageKey = `ws_room_${roomId}`;
-        if (!localStorage.getItem(storageKey)) localStorage.setItem(storageKey, data.room_id);
+        const alreadySaved = localStorage.getItem(storageKey);
+
+        // ✅ If already exists → IGNORE backend new id
+        if (alreadySaved) {
+          // console.log("🛑 Ignored new backend room_id:", data.room_id);
+          return;
+        }
+
+        // ✅ Only first time save
         onRoomIdReceived?.(data.room_id);
         return;
       }
 
-      // Dashboard/chart data — backend se structured
+      // Backend error
+      if (data?.type === "error") {
+        const room = addMessage(roomId, {
+          role: "error",
+          content: data.data || data.message || "Something went wrong",
+          ts: Date.now(),
+        });
+        if (room) onNewMessage(room.messages);
+        return;
+      }
+
+      // Dashboard/chart
       if (data?.type === "dashboard" || data?.chart_data || data?.labels) {
         const chartPayload = data.chart_data || data.data || data;
         const room = addMessage(roomId, {
-          role: "assistant", type: "dashboard",
-          data: chartPayload, query: lastQueryRef.current,
+          role: "assistant",
+          type: "dashboard",
+          data: chartPayload,
+          query: lastQueryRef.current,
           explanation: data.explanation || data.text || "",
           content: data.explanation || data.text || "",
           ts: Date.now(),
@@ -125,55 +176,82 @@ export function useWebSocket({ roomId, onNewMessage, onRoomNameUpdate, onRoomIdR
         return;
       }
 
-      // Normal text response
-      const text = data?.text || data?.content || data?.message || data?.answer;
-      if (text) {
+      // Normal text
+      const text =
+        data?.text ||
+        data?.content ||
+        data?.message ||
+        data?.answer ||
+        data?.data;
+      if (text && typeof text === "string") {
         const chartData = tryParseChart(text);
-        const room = addMessage(roomId, chartData ? {
-          role: "assistant", type: "dashboard",
-          data: chartData, query: lastQueryRef.current,
-          explanation: text, content: text, ts: Date.now(),
-        } : {
-          role: "assistant", content: text, ts: Date.now(),
-        });
+        const room = addMessage(
+          roomId,
+          chartData
+            ? {
+                role: "assistant",
+                type: "dashboard",
+                data: chartData,
+                query: lastQueryRef.current,
+                explanation: text,
+                content: text,
+                ts: Date.now(),
+              }
+            : {
+                role: "assistant",
+                content: text,
+                ts: Date.now(),
+              },
+        );
         if (room) onNewMessage(room.messages);
         return;
       }
 
-      // Kuch bhi match nahi hua — raw dump
       console.warn("Unhandled WS message:", data);
     });
 
     socket.on("error", (msg) => {
       streamBufferRef.current = "";
       setStreamingText(null);
-      const room = addMessage(roomId, { role: "error", content: `Error: ${msg}`, ts: Date.now() });
+      const room = addMessage(roomId, {
+        role: "error",
+        content: `Error: ${msg}`,
+        ts: Date.now(),
+      });
       if (room) onNewMessage(room.messages);
     });
 
-    return () => { socket.destroy(); socketRef.current = null; };
+    return () => {
+      socket.destroy();
+      socketRef.current = null;
+    };
   }, [roomId]);
 
-  const sendMessage = useCallback((text, type = "query") => {
-    if (!socketRef.current) return;
-    lastQueryRef.current = text;
+  const sendMessage = useCallback(
+    (text, type = "query") => {
+      if (!socketRef.current) return;
+      lastQueryRef.current = text;
 
-    const userMsg = { role: "user", content: text, ts: Date.now() };
-    const updatedRoom = addMessage(roomId, userMsg);
+      const userMsg = { role: "user", content: text, ts: Date.now() };
+      const updatedRoom = addMessage(roomId, userMsg);
 
-    if (updatedRoom) {
-      if (updatedRoom.messages.filter((m) => m.role === "user").length === 1) {
-        updatedRoom.name = text.length > 36 ? text.slice(0, 36) + "…" : text;
-        upsertRoom(updatedRoom);
-        onRoomNameUpdate?.(roomId, updatedRoom.name);
+      if (updatedRoom) {
+        if (
+          updatedRoom.messages.filter((m) => m.role === "user").length === 1
+        ) {
+          updatedRoom.name = text.length > 36 ? text.slice(0, 36) + "…" : text;
+          upsertRoom(updatedRoom);
+          onRoomNameUpdate?.(roomId, updatedRoom.name);
+        }
+        onNewMessage(updatedRoom.messages);
       }
-      onNewMessage(updatedRoom.messages);
-    }
 
-    streamBufferRef.current = "";
-    setStreamingText(null);
-    socketRef.current.sendMessage(text, type);
-  }, [roomId, onNewMessage, onRoomNameUpdate]);
+      streamBufferRef.current = "";
+      setStreamingText(null);
+      socketRef.current.sendMessage(text, type);
+    },
+    [roomId, onNewMessage, onRoomNameUpdate],
+  );
 
   return { wsStatus, sendMessage, streamingText };
 }
