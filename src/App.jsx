@@ -8,6 +8,7 @@ import HomeTab from "./components/HomeTab";
 import ChatTab from "./components/ChatTab";
 import { getUsage, incrementUsage } from "./utils/chatStorage";
 
+
 export default function App() {
   const {
     rooms, currentRoomId, messages, geminiKey, serverStatus,
