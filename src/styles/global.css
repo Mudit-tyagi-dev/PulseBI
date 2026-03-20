@@ -1,19 +1,63 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
 
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg0:#080b18;--bg1:#0e1226;--bg2:#141830;--bg3:#1c2140;--bg4:#242850;
-  --accent:#6c63ff;--accentd:rgba(108,99,255,.15);--accent2:#a78bfa;
-  --green:#10d9a0;--yellow:#f59e0b;--red:#f87171;--orange:#fb923c;
-  --t1:#dde1f5;--t2:#8890be;--t3:#464e7a;
-  --border:#1a1f3a;--border2:#22284a;
-  --r4:4px;--r8:8px;--r12:12px;--r16:16px;--r20:20px;
-  --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Dark theme (default) ── */
+:root {
+  --bg0: #080b18;
+  --bg1: #0e1226;
+  --bg2: #141830;
+  --bg3: #1c2140;
+  --bg4: #242850;
+  --accent: #6c63ff;
+  --accentd: rgba(108,99,255,0.15);
+  --accent2: #a78bfa;
+  --green: #10d9a0;
+  --yellow: #f59e0b;
+  --red: #f87171;
+  --orange: #fb923c;
+  --t1: #dde1f5;
+  --t2: #8890be;
+  --t3: #464e7a;
+  --border: #1a1f3a;
+  --border2: #22284a;
+  --r4:4px; --r8:8px; --r12:12px; --r16:16px; --r20:20px;
+  --font: "Outfit", sans-serif;
+  --mono: "JetBrains Mono", monospace;
 }
-html,body,#root{height:100%;width:100%;overflow:hidden}
-body{font-family:var(--font);background:var(--bg0);color:var(--t1);font-size:14px;-webkit-font-smoothing:antialiased}
-button{font-family:var(--font);cursor:pointer}
-code,pre{font-family:var(--mono)}
-::-webkit-scrollbar{width:3px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg0: #f0f2f9;
+  --bg1: #ffffff;
+  --bg2: #f5f6fc;
+  --bg3: #eaecf5;
+  --bg4: #dde0ef;
+  --accent: #6c63ff;
+  --accentd: rgba(108,99,255,0.1);
+  --accent2: #7c6ff7;
+  --green: #059669;
+  --yellow: #d97706;
+  --red: #dc2626;
+  --orange: #ea580c;
+  --t1: #0f1130;
+  --t2: #4a5080;
+  --t3: #9095b8;
+  --border: #e2e4f0;
+  --border2: #d0d3e8;
+}
+
+html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+body {
+  font-family: var(--font);
+  background: var(--bg0);
+  color: var(--t1);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  transition: background .2s, color .2s;
+}
+button { font-family: var(--font); cursor: pointer; }
+code, pre { font-family: var(--mono); }
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 4px; }

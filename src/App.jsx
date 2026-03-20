@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./styles/global.css";
 import "./styles/app.css";
 import { useDashboard } from "./hooks/useDashboard";
 import Sidebar from "./components/Sidebar";
-import GeminiKeyModal from "./components/GeminiKeyModal";
+import SettingsModal from "./components/SettingsModal";
 import HomeTab from "./components/HomeTab";
 import ChatTab from "./components/ChatTab";
 import { getUsage, incrementUsage } from "./utils/chatStorage";
@@ -19,11 +19,29 @@ export default function App() {
   const [activeNav, setActiveNav] = useState("home");
   const [mode, setMode] = useState("query");
   const [usage, setUsage] = useState(getUsage());
-  const [chatOpen, setChatOpen] = useState(true); // ← naya
-  const isStreaming = streamingText !== null;
-  const hasMessages = messages.length > 0;
+  const [chatOpen, setChatOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("pb_theme") || "dark");
 
-  const latestDashboard = [...messages].reverse().find((m) => m.type === "dashboard");
+  const isStreaming = streamingText !== null;
+
+  // ── Theme effect ──
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "system") {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      root.setAttribute("data-theme", mq.matches ? "dark" : "light");
+      const handler = (e) => root.setAttribute("data-theme", e.matches ? "dark" : "light");
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    } else {
+      root.setAttribute("data-theme", theme);
+    }
+  }, [theme]);
+
+  function handleThemeChange(t) {
+    setTheme(t);
+    localStorage.setItem("pb_theme", t);
+  }
 
   function handleSend(text) {
     if (!text?.trim()) return;
@@ -58,20 +76,21 @@ export default function App() {
         switchRoom={(id) => { switchRoom(id); setActiveNav("chat"); }}
         newChat={async () => { await newChat(); setActiveNav("chat"); }}
         uploadFile={uploadFile} roomFile={roomFile}
-        onTryDemo={() => handleSend("Show me top 5 categories by total views")}
+        onTryDemo={() => { handleSend("Show me top 5 categories by total views"); setActiveNav("chat"); }}
       />
     );
 
     return (
       <ChatTab
         messages={messages} streamingText={streamingText}
-        latestDashboard={latestDashboard} isStreaming={isStreaming}
-        wsStatus={wsStatus} currentRoomId={currentRoomId}
-        geminiKey={geminiKey} backendRoomId={backendRoomId}
-        mode={mode} onModeToggle={() => setMode((p) => p === "query" ? "chart" : "query")}
+        isStreaming={isStreaming} wsStatus={wsStatus}
+        currentRoomId={currentRoomId} geminiKey={geminiKey}
+        backendRoomId={backendRoomId} mode={mode}
+        onModeToggle={() => setMode((p) => p === "query" ? "chart" : "query")}
         onSend={handleSend} onOpenKeyModal={() => setShowKeyModal(true)}
         uploadFile={uploadFile} roomFile={roomFile}
-        chatOpen={chatOpen} onToggleChat={() => setChatOpen(p => !p)}
+        chatOpen={chatOpen}
+        onToggleChat={() => setChatOpen((p) => !p)}
       />
     );
   }
@@ -100,27 +119,33 @@ export default function App() {
         <div className="topbar">
           <div className="tb-left" />
           <div className="tb-right">
-            {/* Chat toggle btn — sirf chat tab pe dikhao */}
-            {activeNav === "chat" && hasMessages && (
+            {activeNav === "chat" && (
               <button
                 className={`tb-btn chat-toggle-btn ${chatOpen ? "active" : ""}`}
-                onClick={() => setChatOpen(p => !p)}
+                onClick={() => setChatOpen((p) => !p)}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                 </svg>
-                {chatOpen ? "Hide Chat" : "Show Chat"}
+                {chatOpen ? "Hide AI Chat" : "AI Chat"}
               </button>
             )}
             <button className="tb-btn" onClick={handleExport}>Export</button>
-            <button className="tb-btn key" onClick={() => setShowKeyModal(true)}>API Key</button>
+            <button className="tb-btn key" onClick={() => setShowKeyModal(true)}>Settings</button>
           </div>
         </div>
+
         <div className="content-area">{renderContent()}</div>
       </div>
 
       {showKeyModal && (
-        <GeminiKeyModal currentKey={geminiKey} onSave={saveGeminiKey} onClose={() => setShowKeyModal(false)} />
+        <SettingsModal
+          currentKey={geminiKey}
+          onSave={saveGeminiKey}
+          onClose={() => setShowKeyModal(false)}
+          theme={theme}
+          onThemeChange={handleThemeChange}
+        />
       )}
     </div>
   );

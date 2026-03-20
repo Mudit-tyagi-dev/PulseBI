@@ -363,3 +363,29 @@
   flex-shrink: 0;
   color: var(--accent2);
 }
+/* WS dot inside prompt box */
+.prompt-ws-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+  align-self: flex-end;
+  transition: background .3s;
+}
+.prompt-ws-dot.ws-open {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(16,217,160,0.5);
+  animation: lpulse 2s infinite;
+}
+.prompt-ws-dot.ws-connecting {
+  background: var(--yellow);
+  animation: lpulse .8s infinite;
+}
+.prompt-ws-dot.ws-closed { background: var(--t3); }
+.prompt-ws-dot.ws-error { background: var(--red); }
+
+@keyframes lpulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
