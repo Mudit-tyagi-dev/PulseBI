@@ -1,80 +1,82 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "../styles/chatmessages.css";
-import { Bar, Line, Pie, Doughnut } from "react-chartjs-2";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-} from "chart.js";
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  ArcElement,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend
-);
-
-// ── Message formatter ─────────────────────
 function formatContent(content) {
   if (!content) return null;
-
-  return content.split("\n").map((line, i) => (
-    <p key={i}>{line}</p>
-  ));
+  return content.split("\n").map((line, i) => <p key={i}>{line}</p>);
 }
 
-// ── Chart renderer inside chat ────────────
-function ChartBlock({ data }) {
-  if (!data || !data.labels || !data.datasets) return null;
+const LOADING_PHASES = [
+  { until: 3000,     text: "Thinking",                isError: false },
+  { until: 6000,     text: "Analysing data",           isError: false },
+  { until: 12000,    text: "Taking longer than usual", isError: false },
+  { until: Infinity, text: "Something went wrong",     isError: true  },
+];
 
-  const chartData = {
-    labels: data.labels,
-    datasets: data.datasets,
-  };
+function LoadingBubble() {
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  const [dotCount, setDotCount] = useState(1);
 
-  switch (data.chart_type) {
-    case "line":
-      return <Line data={chartData} />;
-    case "pie":
-      return <Pie data={chartData} />;
-    case "doughnut":
-      return <Doughnut data={chartData} />;
-    default:
-      return <Bar data={chartData} />;
-  }
+  useEffect(() => {
+    const timers = LOADING_PHASES
+      .filter((p) => p.until !== Infinity)
+      .map((phase, i) => setTimeout(() => setPhaseIndex(i + 1), phase.until));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  useEffect(() => {
+    if (LOADING_PHASES[phaseIndex].isError) return;
+    const id = setInterval(() => setDotCount((d) => (d % 3) + 1), 500);
+    return () => clearInterval(id);
+  }, [phaseIndex]);
+
+  const phase = LOADING_PHASES[phaseIndex];
+
+  return (
+    <div className="msg-row ai">
+      <div className="msg-avatar">AI</div>
+      <div className={`msg-bubble ai ${phase.isError ? "loading-error" : "loading-bubble"}`}>
+        {phase.isError ? (
+          <span>⚠ Something went wrong. Please try again.</span>
+        ) : (
+          <span>
+            {phase.text}
+            <span className="loading-dots">{"·".repeat(dotCount)}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// ── Message bubble ────────────────────────
-function Message({ msg }) {
-  const isUser = msg.role === "user";
+function DashboardCard({ msg, onViewDashboard }) {
+  return (
+    <div className="dashboard-card">
+      <div className="dashboard-card-icon">📊</div>
+      <div className="dashboard-card-info">
+        <span className="dashboard-card-title">Chart ready</span>
+        <span className="dashboard-card-sub">View it on your dashboard</span>
+      </div>
+      <button className="dashboard-card-btn" onClick={onViewDashboard}>
+        View →
+      </button>
+    </div>
+  );
+}
+
+function Message({ msg, onViewDashboard }) {
+  const isUser  = msg.role === "user";
   const isChart = msg.type === "dashboard";
 
   return (
     <div className={`msg-row ${isUser ? "user" : "ai"}`}>
       <div className="msg-avatar">{isUser ? "You" : "AI"}</div>
-
       <div className={`msg-bubble ${isUser ? "user" : "ai"}`}>
         {isChart ? (
-          <div className="chart-wrap">
-            <ChartBlock data={msg.data} />
-            {msg.explanation && (
-              <p className="chart-expl">{msg.explanation}</p>
-            )}
-          </div>
+          <DashboardCard msg={msg} onViewDashboard={onViewDashboard} />
         ) : (
           <div className="msg-body">{formatContent(msg.content)}</div>
         )}
-
         {msg.ts && (
           <div className="msg-ts">
             {new Date(msg.ts).toLocaleTimeString([], {
@@ -88,34 +90,19 @@ function Message({ msg }) {
   );
 }
 
-// ── Streaming bubble ──────────────────────
-function StreamingBubble({ text }) {
-  return (
-    <div className="msg-row ai">
-      <div className="msg-avatar">AI</div>
-      <div className="msg-bubble ai streaming">
-        {text || "Thinking..."}
-      </div>
-    </div>
-  );
-}
-
-// ── Main ─────────────────────────────────
-export default function ChatMessages({ messages, streamingText }) {
+export default function ChatMessages({ messages, isLoading, onChipClick, onViewDashboard }) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText]);
+  }, [messages, isLoading]);
 
   return (
     <div className="messages-wrap">
       {messages.map((m, i) => (
-        <Message key={i} msg={m} />
+        <Message key={i} msg={m} onViewDashboard={onViewDashboard} />
       ))}
-
-      {streamingText && <StreamingBubble text={streamingText} />}
-
+      {isLoading && <LoadingBubble />}
       <div ref={bottomRef} />
     </div>
   );

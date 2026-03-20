@@ -12,8 +12,7 @@ function tryParseChart(text) {
 
   const numberedList = text.match(/\d+\.\s+\*?([\w\s]+)\*?:\s*([\d,]+)/g);
   if (numberedList && numberedList.length >= 2) {
-    const labels = [],
-      values = [];
+    const labels = [], values = [];
     numberedList.forEach((item) => {
       const match = item.match(/\d+\.\s+\*?([\w\s]+)\*?:\s*([\d,]+)/);
       if (match) {
@@ -74,6 +73,7 @@ export function useWebSocket({
   const socketRef = useRef(null);
   const [wsStatus, setWsStatus] = useState(WS_STATUS.CLOSED);
   const [streamingText, setStreamingText] = useState(null);
+  const [isWaiting, setIsWaiting] = useState(false);
   const streamBufferRef = useRef("");
   const lastQueryRef = useRef("");
 
@@ -86,6 +86,7 @@ export function useWebSocket({
 
     streamBufferRef.current = "";
     setStreamingText(null);
+    setIsWaiting(false);
 
     const socket = createSocket(roomId);
     socketRef.current = socket;
@@ -95,11 +96,13 @@ export function useWebSocket({
     });
 
     socket.on("token", (token) => {
+      setIsWaiting(false);
       streamBufferRef.current += token;
       setStreamingText(streamBufferRef.current);
     });
 
     socket.on("done", () => {
+      setIsWaiting(false);
       const fullText = streamBufferRef.current;
       streamBufferRef.current = "";
       setStreamingText(null);
@@ -110,6 +113,7 @@ export function useWebSocket({
         roomId,
         chartData
           ? {
+              id: crypto.randomUUID(),
               role: "assistant",
               type: "dashboard",
               data: chartData,
@@ -128,28 +132,21 @@ export function useWebSocket({
     });
 
     socket.on("message", (data) => {
+      //  console.log("RAW MESSAGE:", JSON.stringify(data, null, 2)); // ← add karo
+      setIsWaiting(false);
       streamBufferRef.current = "";
       setStreamingText(null);
 
       console.log("WS message received:", JSON.stringify(data));
 
-      // room_id — backend ka room assign
       if (data?.room_id) {
         const storageKey = `ws_room_${roomId}`;
         const alreadySaved = localStorage.getItem(storageKey);
-
-        // ✅ If already exists → IGNORE backend new id
-        if (alreadySaved) {
-          // console.log("🛑 Ignored new backend room_id:", data.room_id);
-          return;
-        }
-
-        // ✅ Only first time save
+        if (alreadySaved) return;
         onRoomIdReceived?.(data.room_id);
         return;
       }
 
-      // Backend error
       if (data?.type === "error") {
         const room = addMessage(roomId, {
           role: "error",
@@ -160,24 +157,21 @@ export function useWebSocket({
         return;
       }
 
-      // Dashboard/chart
       if (data?.type === "chart" || data?.data?.chart_type) {
         const chart = data.data;
-
         const room = addMessage(roomId, {
           role: "assistant",
           type: "dashboard",
           data: chart,
           query: lastQueryRef.current,
+           sql_query: data.sql_query,
           explanation: data.explanation || "",
           ts: Date.now(),
         });
-
         if (room) onNewMessage(room.messages);
         return;
       }
 
-      // Normal text
       const text =
         data?.text ||
         data?.content ||
@@ -212,6 +206,7 @@ export function useWebSocket({
     });
 
     socket.on("error", (msg) => {
+      setIsWaiting(false);
       streamBufferRef.current = "";
       setStreamingText(null);
       const room = addMessage(roomId, {
@@ -232,14 +227,13 @@ export function useWebSocket({
     (text, type = "query") => {
       if (!socketRef.current) return;
       lastQueryRef.current = text;
+      setIsWaiting(true);
 
       const userMsg = { role: "user", content: text, ts: Date.now() };
       const updatedRoom = addMessage(roomId, userMsg);
 
       if (updatedRoom) {
-        if (
-          updatedRoom.messages.filter((m) => m.role === "user").length === 1
-        ) {
+        if (updatedRoom.messages.filter((m) => m.role === "user").length === 1) {
           updatedRoom.name = text.length > 36 ? text.slice(0, 36) + "…" : text;
           upsertRoom(updatedRoom);
           onRoomNameUpdate?.(roomId, updatedRoom.name);
@@ -254,5 +248,5 @@ export function useWebSocket({
     [roomId, onNewMessage, onRoomNameUpdate],
   );
 
-  return { wsStatus, sendMessage, streamingText };
+  return { wsStatus, sendMessage, streamingText, isWaiting };
 }

@@ -111,3 +111,10 @@ export function setMonthlyLimit(limit) {
   usage.monthlyLimit = limit;
   localStorage.setItem(USAGE_KEY, JSON.stringify(usage));
 }
+export function deleteMessage(roomId, messageId) {
+  const rooms = getRooms();
+  if (!rooms[roomId]) return null;
+  rooms[roomId].messages = rooms[roomId].messages.filter(m => m.id !== messageId);
+  saveRooms(rooms);
+  return { ...rooms[roomId], messages: [...rooms[roomId].messages] };
+}
