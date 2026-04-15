@@ -58,6 +58,14 @@ export default function App() {
       root.setAttribute("data-theme", theme);
     }
   }, [theme]);
+  useEffect(() => {
+  const interval = setInterval(() => {
+    fetch("https://biz-dash-backend.onrender.com/health")
+      .catch(() => {}); // ignore errors
+  }, 5 * 60 * 1000); // every 5 min
+
+  return () => clearInterval(interval);
+}, []);
 
   function handleThemeChange(t) {
     setTheme(t);
